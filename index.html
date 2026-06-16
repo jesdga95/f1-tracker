@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c">
+<title>Who Wins the Title? · F1 Championship Odds</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="hero" id="hero" data-bg="">
+  <div class="wrap">
+    <div class="eyebrow">Live Title Race · Monte Carlo</div>
+    <div class="bignum" id="heroNum">…</div>
+    <div class="heroclaim" id="heroClaim">Loading the live championship…</div>
+    <p class="herosub" id="heroSub">Pulling real standings and results to build the model.</p>
+    <div class="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">LIVE DATA · JOLPICA F1</span></div>
+  </div>
+</header>
+
+<section class="field">
+  <div class="wrap">
+    <div class="sectlabel">Title odds across the season</div>
+    <div class="chartwrap">
+      <svg id="chart" class="chart" viewBox="0 0 720 300" preserveAspectRatio="none" role="img" aria-label="Title probability by round for each contender"></svg>
+      <div class="chartx">
+        <span>R1</span><span class="xnow" id="xnow">now</span><span id="xlast">end</span>
+      </div>
+    </div>
+    <div class="legend" id="legend"></div>
+
+    <div class="sectlabel" style="margin-top:40px">Who takes the crown, simulated</div>
+    <div id="bars"></div>
+  </div>
+</section>
+
+<section class="sim">
+  <div class="wrap">
+    <div class="simhead">
+      <h2>Run your own season</h2>
+      <p>Pick a contender, bend their assumptions, and watch the live Monte Carlo shift. Defaults come straight from this season's real results.</p>
+    </div>
+
+    <div class="sectlabel" style="margin-top:30px">Pick a driver to tune</div>
+    <div class="picker" id="picker"></div>
+    <p class="tuning" id="tuningName"></p>
+
+    <div class="controls" id="controls"></div>
+
+    <div class="simbtns">
+      <button id="runBtn">Run simulation</button>
+      <button class="ghost" id="resetBtn">Reset to live data</button>
+      <span class="runstate" id="runState">Loading…</span>
+    </div>
+    <div class="progwrap" id="progWrap"><div class="progbar" id="progBar"></div></div>
+  </div>
+</section>
+
+<section class="method">
+  <div class="wrap">
+    <h2>What's under the hood</h2>
+    <p class="lead">Not a single average. The remaining season is simulated tens of thousands of times, sampling a noisy result for each contender in every race, then counting how often each one ends up champion. Every default is derived from real data, no hand-set numbers.</p>
+    <div class="vars">
+      <div class="var"><div class="n">01</div><h3>The real calendar</h3><p>Remaining Grands Prix and sprints come straight from the live schedule, so the points still on the table are exact, not assumed.</p></div>
+      <div class="var"><div class="n">02</div><h3>Pace as a spread</h3><p>Each driver's average finish is an outlier-robust mean of their real classifications, then sampled as a noisy position every race, so a fast car still has the odd quiet Sunday.</p></div>
+      <div class="var"><div class="n">03</div><h3>Reliability, regularized</h3><p>DNF rates come from real retirements, but a clean run of seven races isn't a 0% car. Each rate is shrunk toward a sensible prior so small samples don't lie.</p></div>
+      <div class="var"><div class="n">04</div><h3>Development drift</h3><p>The one manual knob. A handful of races can't justify extrapolating a development slope, so you set it per driver rather than the model guessing.</p></div>
+      <div class="var"><div class="n">05</div><h3>The whole front, not one driver</h3><p>The top contenders are all modelled at once, and some races are stolen by an outsider, a rate also estimated from who's actually been winning.</p></div>
+      <div class="var"><div class="n">06</div><h3>Counting titles</h3><p>After every simulated season the points are tallied and the champion recorded. Each driver's share of those wins is their probability.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="disclaim"><strong>Read this before you bet your house.</strong> A hobbyist model fed by real results from the Jolpica (Ergast-compatible) F1 API. Pace, reliability and outsider-win rates are estimated from a small sample and regularized toward priors; development is a manual assumption. It ignores qualifying pace, track-specific strengths, weather and live betting markets. Treat the number as a reasonable ballpark, not gospel.</p>
+  </div>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

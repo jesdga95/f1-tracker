@@ -1,0 +1,10 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# in case you add tooling later
+node_modules/
+.vercel/
+*.log

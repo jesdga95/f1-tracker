@@ -1,0 +1,41 @@
+name: Snapshot F1 data
+
+# Free on public repos. Refreshes the committed data snapshot a few times a day
+# so visitors load instantly with zero calls to the third-party API.
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours (4x/day, UTC)
+  workflow_dispatch:        # manual run button
+
+permissions:
+  contents: write
+
+# Don't pile up overlapping runs.
+concurrency:
+  group: snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch latest standings
+        run: node scripts/snapshot.mjs
+
+      - name: Commit if the data changed
+        run: |
+          if [ -n "$(git status --porcelain data/)" ]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add data/
+            git commit -m "chore: refresh F1 data snapshot"
+            git push
+          else
+            echo "No data change; nothing to commit."
+          fi
