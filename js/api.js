@@ -9,7 +9,9 @@ const PAGE = 100;
 // localStorage is absent under Node, so guard it and no-op there.
 const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
 
-async function cachedJSON(url) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function cachedJSON(url, attempt = 0) {
   const key = 'f1cache:' + url;
   if (store) {
     try {
@@ -18,6 +20,12 @@ async function cachedJSON(url) {
     } catch { /* ignore corrupt cache */ }
   }
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  // Jolpica rate-limits (429); back off and retry rather than abort the snapshot.
+  if ((res.status === 429 || res.status >= 500) && attempt < 6) {
+    const retryAfter = Number(res.headers.get('retry-after')) || 0;
+    await sleep(retryAfter ? retryAfter * 1000 : Math.min(10000, 600 * 2 ** attempt));
+    return cachedJSON(url, attempt + 1);
+  }
   if (!res.ok) throw new Error(`Jolpica ${res.status} on ${url}`);
   const d = await res.json();
   if (store) {
@@ -51,6 +59,24 @@ export async function getStandings(year) {
       wins: Number(r.wins),
     })),
   };
+}
+
+// Official cumulative points after each round: { round -> { driverId -> points } }.
+// One call per round, so reserve it for completed (wayback) seasons in the
+// snapshot. This is the real championship as it stood, fastest-lap points,
+// sprint-format quirks, half-points races and penalties all included.
+export async function getStandingsByRound(year, rounds) {
+  const byRound = {};
+  for (let r = 1; r <= rounds; r++) {
+    if (r > 1) await sleep(250);   // stay under Jolpica's burst limit
+    const lists = (await cachedJSON(`${BASE}/${year}/${r}/driverStandings/`))
+      .MRData.StandingsTable.StandingsLists;
+    if (!lists.length) continue;
+    byRound[r] = Object.fromEntries(
+      lists[0].DriverStandings.map((s) => [s.Driver.driverId, Number(s.points)])
+    );
+  }
+  return byRound;
 }
 
 export async function getResults(year) {
@@ -91,23 +117,31 @@ export async function loadSeason(year) {
   return { standings, results, sprints, schedule };
 }
 
-const SNAPSHOT_URL = 'data/latest.json';
-const SNAPSHOT_KEY = 'f1-snapshot';
-
-// On fetch failure, fall back to the last snapshot cached in localStorage so a
+// On fetch failure, fall back to the last copy cached in localStorage so a
 // returning visitor still sees data instead of an error.
-export async function loadSnapshot() {
+async function loadCached(url, key) {
   try {
-    const res = await fetch(SNAPSHOT_URL, { cache: 'no-cache' });
-    if (!res.ok) throw new Error(`snapshot ${res.status}`);
+    const res = await fetch(url, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`${url} ${res.status}`);
     const data = await res.json();
-    if (store) { try { store.setItem(SNAPSHOT_KEY, JSON.stringify(data)); } catch { /* quota */ } }
+    if (store) { try { store.setItem(key, JSON.stringify(data)); } catch { /* quota */ } }
     return data;
   } catch (err) {
     if (store) {
-      const cached = store.getItem(SNAPSHOT_KEY);
+      const cached = store.getItem(key);
       if (cached) return JSON.parse(cached);
     }
     throw err;
   }
+}
+
+// Lists the available seasons: { current, years: [...] }. `current` is the live
+// (tunable) season; the rest are the read-only wayback set.
+export function loadManifest() {
+  return loadCached('data/seasons.json', 'f1-manifest');
+}
+
+// One season's committed snapshot: { year, standings, results, sprints, schedule }.
+export function loadSeasonSnapshot(year) {
+  return loadCached(`data/${year}.json`, `f1-snapshot:${year}`);
 }

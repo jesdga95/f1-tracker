@@ -1,10 +1,11 @@
 // Boot, render, and wire the driver picker + per-driver tuning sliders. Data
 // comes from the committed snapshot only (see js/api.js).
 
-import { loadSnapshot } from './api.js';
+import { loadManifest, loadSeasonSnapshot } from './api.js';
 import { deriveParams } from './stats.js';
 import { simulate, simulateChunked } from './sim.js';
-import { drawChart, teamColor } from './chart.js';
+import { drawChart, drawMarker, teamColor, lineStyles, legendSwatch } from './chart.js';
+import { titleOddsByRound } from './odds.js';
 
 const BASE_RUNS = 50_000;
 const HISTORY_RUNS = 4_000;
@@ -22,8 +23,13 @@ const $ = (id) => document.getElementById(id);
 const kkMultiplier = (step) => 1 + step * 0.15;
 
 const state = {
-  season: null,
-  year: null,
+  manifest: null,      // { current, years } from data/seasons.json
+  liveYear: null,      // the one tunable season
+  seasons: {},         // year -> raw snapshot cache
+  season: null,        // raw snapshot for the displayed year
+  year: null,          // displayed year
+  tunable: false,      // is the displayed season the live one (toggles on)?
+  gen: 0,              // bumped on each season switch / run to drop stale sims
   model: null,
   history: {},
   selectedId: null,
@@ -74,6 +80,35 @@ function nowSchedule() {
   };
 }
 
+// Wayback hero: the REAL championship standings after a chosen round — points
+// only, no probability (the chart and bars carry the odds). pts = points that round.
+function renderHeroWayback(pts, round) {
+  const { contenders, meta } = state.model;
+  const N = meta.totalRounds;
+  const ranked = [...contenders].sort((a, b) => (pts[b.id] ?? 0) - (pts[a.id] ?? 0));
+  const leader = ranked[0];
+  const second = ranked[1];
+  $('heroNum').innerHTML = `${pts[leader.id] ?? 0}<span class="pct">PTS</span>`;
+
+  if (round >= N) {
+    const champ = contenders[0];                 // standings are championship-ordered (countback-safe)
+    const margin = second ? (pts[champ.id] ?? 0) - (pts[second.id] ?? 0) : 0;
+    $('heroClaim').textContent = `${champ.name} won the ${state.year} World Championship.`;
+    $('heroSub').textContent = second
+      ? `Final standings after ${N} rounds: ${champ.name} on ${pts[champ.id] ?? 0} pts, ${margin} clear of ${second.name}. `
+        + `Drag the race slider to replay how the odds swung.`
+      : `Final standings after ${N} rounds: ${champ.name} on ${pts[champ.id] ?? 0} pts.`;
+  } else {
+    const left = N - round;
+    const gap = second ? (pts[leader.id] ?? 0) - (pts[second.id] ?? 0) : 0;
+    $('heroClaim').textContent = `${leader.name} leads the ${state.year} championship after Round ${round}.`;
+    $('heroSub').textContent = `Real standings after Round ${round}, with ${left} race${left === 1 ? '' : 's'} still to run. `
+      + (second ? `${gap} pts clear of ${second.name}. ` : '')
+      + `Drag the slider to move through the season; the bars show each driver's title chance.`;
+  }
+  $('hero').dataset.bg = leader.num || '';
+}
+
 function renderHero(odds) {
   const { contenders, meta } = state.model;
   const fav = contenders.reduce((a, b) => ((odds[b.id] ?? 0) > (odds[a.id] ?? 0) ? b : a));
@@ -90,20 +125,25 @@ function renderHero(odds) {
   $('hero').dataset.bg = fav.num || '';
 }
 
-function renderBars(odds) {
+// pointsMap is optional: in wayback, pass the real standings as of the chosen
+// round so the gap tags reflect that moment and the actual points sit beside the
+// title chance; omit it for the live season (chance only).
+function renderBars(odds, pointsMap) {
   const { contenders } = state.model;
+  const ptsOf = (d) => (pointsMap ? (pointsMap[d.id] ?? 0) : d.points);
   const sorted = [...contenders].sort((a, b) => (odds[b.id] ?? 0) - (odds[a.id] ?? 0));
   const max = Math.max(1, ...sorted.map((d) => odds[d.id] ?? 0));
-  const leaderPts = Math.max(...contenders.map((d) => d.points));
+  const leaderPts = Math.max(...contenders.map(ptsOf));
   $('bars').innerHTML = sorted.map((d) => {
     const pct = odds[d.id] ?? 0;
-    const gap = d.points - leaderPts;
+    const gap = ptsOf(d) - leaderPts;
     const tag = gap === 0 ? 'LEADER' : `${gap} PTS`;
+    const points = pointsMap ? `<span class="dpts">${ptsOf(d)} pts</span>` : '';
     return `
       <div class="driver">
         <div class="drow">
           <div><span class="dname">${d.name}</span><span class="dteam">${d.team.toUpperCase()} · ${tag}</span></div>
-          <div class="dpct">${pct.toFixed(1)}%</div>
+          <div class="dpct">${points}${pct.toFixed(1)}%</div>
         </div>
         <div class="track"><div class="bar" style="width:${(pct / max) * 100}%;background:linear-gradient(90deg,${teamColor(d.team)}88,${teamColor(d.team)})"></div></div>
       </div>`;
@@ -111,8 +151,9 @@ function renderBars(odds) {
 }
 
 function renderLegend() {
+  const styles = lineStyles(state.model.contenders);
   $('legend').innerHTML = state.model.contenders.map((d) =>
-    `<span class="lg"><i style="background:${teamColor(d.team)}"></i>${d.name}</span>`
+    `<span class="lg"><i style="background:${legendSwatch(teamColor(d.team), styles[d.id].idx)}"></i>${d.name}</span>`
   ).join('');
 }
 
@@ -138,6 +179,7 @@ function renderAll(rawOdds) {
 function showDataSource(fetchedAt) {
   const el = $('dataSrc');
   if (!el) return;
+  if (!state.tunable) { el.textContent = `${state.year} FINAL · JOLPICA F1`; return; }
   const when = fetchedAt
     ? new Date(fetchedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase()
     : null;
@@ -245,15 +287,129 @@ function setBusy(busy, msg) {
 }
 
 function run(label, seed = (Date.now() & 0xffffff)) {
+  const gen = ++state.gen;   // any earlier run/season-switch is now stale
   setBusy(true, `Simulating ${state.runs.toLocaleString()} seasons…`);
   simulateChunked(state.model.contenders, nowSchedule(), state.runs, seed, {
-    onProgress: (f) => { $('progBar').style.width = `${f * 100}%`; },
+    onProgress: (f) => { if (gen === state.gen) $('progBar').style.width = `${f * 100}%`; },
     onDone: (odds) => {
+      if (gen !== state.gen) return;   // a newer run or season took over
       renderAll(odds);
       setBusy(false, `${label} · ${state.runs.toLocaleString()} seasons`);
       setTimeout(() => $('progWrap').classList.remove('on'), 250);
     },
   });
+}
+
+const raceLabel = (r, N) => (r >= N ? `Round ${r} of ${N} · final` : `Round ${r} of ${N}`);
+
+// Wayback: compute the analytic title odds for every round from the real
+// standings (no Monte Carlo), draw the full probability arc once, then let the
+// slider scrub a marker across it. state.waySeries holds the real points (for
+// the standings context); state.history holds the per-round odds.
+function enterWayback() {
+  setBusy(false);
+  const { meta, contenders } = state.model;
+  const N = meta.totalRounds;
+  state.waySeries = state.season.standingsByRound || state.model.pointsByRound;
+  state.history = titleOddsByRound(state.waySeries, contenders.map((d) => d.id), meta);
+  renderChart(state.history[N]);       // headline = settled finale; lines drawn once
+
+  state.wayRound = 1;                  // open at Round 1 and let the user replay forward
+  const slider = $('raceSlider');
+  slider.min = 1; slider.max = N; slider.step = 1; slider.value = 1;
+  slider.oninput = () => { state.wayRound = Number(slider.value); updateWayback(state.wayRound); };
+  updateWayback(state.wayRound);
+}
+
+// The title odds + real standings + chart marker as they stood after `round`.
+function updateWayback(round) {
+  const { meta, contenders } = state.model;
+  const N = meta.totalRounds;
+  const r = Math.min(round, N);
+  const odds = state.history[r] || {};
+  const pts = state.waySeries[r] || {};
+  renderHeroWayback(pts, r);
+  renderBars(odds, pts);
+  drawMarker($('chart'), { contenders, series: state.history, meta, round: r, yMax: 100 });
+  $('v_race').textContent = raceLabel(r, N);
+  $('barsLabel').textContent = r >= N ? `Final championship · after ${N} rounds` : `Title odds after Round ${r}`;
+}
+
+function renderSeasonPicker() {
+  const years = [...state.manifest.years].sort((a, b) => b - a);   // newest first
+  $('seasonPicker').innerHTML = years.map((y) => {
+    const tag = y === state.liveYear
+      ? '<span class="num live">LIVE</span>'
+      : '<span class="num">replay</span>';
+    return `<button class="chip" data-year="${y}" aria-pressed="${y === state.year}">${y}${tag}</button>`;
+  }).join('');
+  $('seasonPicker').querySelectorAll('.chip').forEach((btn) =>
+    btn.addEventListener('click', () => selectSeason(Number(btn.dataset.year))));
+}
+
+function updateSeasonActive() {
+  $('seasonPicker').querySelectorAll('.chip').forEach((b) =>
+    b.setAttribute('aria-pressed', String(Number(b.dataset.year) === state.year)));
+}
+
+// Toggle UI between the live (simulated, tunable) season and a wayback season
+// (real, settled championship data — no Monte Carlo).
+function applyMode() {
+  state.tunable = state.year === state.liveYear && state.model.meta.gpLeft > 0;
+  $('sim').hidden = !state.tunable;            // "Run your own season" is live-only
+  $('method').hidden = !state.tunable;         // "What's under the hood" describes the live model
+  $('racePick').hidden = state.tunable;        // the race scrubber is wayback-only
+  $('bars').classList.toggle('instant', !state.tunable);   // no grow-animation while scrubbing
+  $('xnow').style.display = state.tunable ? '' : 'none';
+  $('eyebrow').textContent = state.tunable
+    ? 'Live Title Race · Monte Carlo'
+    : `${state.year} Season · Wayback · Real Results`;
+  $('chartLabel').textContent = 'Title odds across the season';
+  if (state.tunable) $('barsLabel').textContent = 'Who takes the crown, simulated';
+  renderStamp();
+}
+
+// The hero stamp: a simulated-seasons count when live; for wayback, odds are
+// computed analytically from real results, so say so (no simulation).
+function renderStamp() {
+  $('stamp').innerHTML = state.tunable
+    ? `MODEL STATE · <span class="live" id="stampN">${state.runs.toLocaleString()}</span> SIMULATED SEASONS · <span id="dataSrc"></span>`
+    : `REPLAY · ODDS FROM REAL RESULTS · NO SIMULATION · <span id="dataSrc"></span>`;
+}
+
+async function selectSeason(year) {
+  state.year = year;
+  state.gen++;                       // invalidate any in-flight sim from the old season
+  updateSeasonActive();
+  setBusy(true, 'Loading season…');
+  try {
+    state.season = state.seasons[year] ??= await loadSeasonSnapshot(year);
+  } catch (err) {
+    console.error(err);
+    $('runState').textContent = 'Could not load that season.';
+    setBusy(false);
+    return;
+  }
+  if (state.year !== year) return;   // user switched again while we were loading
+
+  // Each season starts from its own baseline; tuning never carries across.
+  state.runs = BASE_RUNS;
+  state.realism = DEFAULT_REALISM;
+  state.tuned = false;
+  state.model = deriveParams(state.season);
+  state.selectedId = state.model.contenders[0].id;
+
+  applyMode();                 // sets state.tunable from the model
+  showDataSource(state.season.fetchedAt);
+  renderLegend();
+  if (state.tunable) {
+    state.history = computeHistory(state.model);   // Monte Carlo only for the live season
+    renderPicker();
+    buildControls();
+    run('Baseline', BASE_SEED);
+  } else {
+    enterWayback();                                // analytic odds from real data, no sims
+  }
 }
 
 function reset() {
@@ -274,22 +430,15 @@ function reset() {
 async function boot() {
   $('resetBtn').addEventListener('click', reset);
   try {
-    state.season = await loadSnapshot();
-    state.year = state.season.year;
-    state.model = deriveParams(state.season);
-    state.history = computeHistory(state.model);
-    state.selectedId = state.model.contenders[0].id;
-
-    showDataSource(state.season.fetchedAt);
-    renderLegend();
-    renderPicker();
-    buildControls();
-    run('Baseline', BASE_SEED);
+    state.manifest = await loadManifest();
+    state.liveYear = state.manifest.current;
+    renderSeasonPicker();
+    await selectSeason(state.liveYear);
   } catch (err) {
     console.error(err);
     $('heroNum').textContent = '··';
     $('heroClaim').textContent = 'Data is not available yet.';
-    $('heroSub').textContent = 'Could not load the data snapshot. If this is a fresh deploy, the scheduled job may not have produced data/latest.json yet.';
+    $('heroSub').textContent = 'Could not load the data snapshot. If this is a fresh deploy, the scheduled job may not have produced data/seasons.json yet.';
     $('runState').textContent = 'No data';
     $('resetBtn').disabled = true;
   }

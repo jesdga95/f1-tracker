@@ -11,17 +11,20 @@
 
 <header class="hero" id="hero" data-bg="">
   <div class="wrap">
-    <div class="eyebrow">Live Title Race · Monte Carlo</div>
+    <div class="eyebrow" id="eyebrow">Live Title Race · Monte Carlo</div>
     <div class="bignum" id="heroNum">…</div>
     <div class="heroclaim" id="heroClaim">Loading the live championship…</div>
     <p class="herosub" id="heroSub">Pulling real standings and results to build the model.</p>
-    <div class="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">DATA VIA JOLPICA F1</span></div>
+    <div class="stamp" id="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">DATA VIA JOLPICA F1</span></div>
   </div>
 </header>
 
 <section class="field">
   <div class="wrap">
-    <div class="sectlabel">Title odds across the season</div>
+    <div class="sectlabel">Season · wayback</div>
+    <div class="picker seasons" id="seasonPicker"></div>
+
+    <div class="sectlabel" style="margin-top:36px" id="chartLabel">Title odds across the season</div>
     <div class="chartwrap">
       <svg id="chart" class="chart" viewBox="0 0 720 300" preserveAspectRatio="none" role="img" aria-label="Title probability by round for each contender"></svg>
       <div class="chartx">
@@ -30,12 +33,21 @@
     </div>
     <div class="legend" id="legend"></div>
 
-    <div class="sectlabel" style="margin-top:40px">Who takes the crown, simulated</div>
+    <div class="racepick" id="racePick" hidden>
+      <div class="racehead">
+        <span class="racelbl">Replay the season — drag through every race</span>
+        <span class="raceval" id="v_race">Round 1</span>
+      </div>
+      <input type="range" id="raceSlider" min="1" max="1" step="1" value="1"
+             aria-label="Pick a race to see the title odds at that point in the season">
+    </div>
+
+    <div class="sectlabel" style="margin-top:40px" id="barsLabel">Who takes the crown, simulated</div>
     <div id="bars"></div>
   </div>
 </section>
 
-<section class="sim">
+<section class="sim" id="sim">
   <div class="wrap">
     <div class="simhead">
       <h2>Run your own season</h2>
@@ -56,7 +68,7 @@
   </div>
 </section>
 
-<section class="method">
+<section class="method" id="method">
   <div class="wrap">
     <h2>What's under the hood</h2>
     <p class="lead">Not a single average. The remaining season is simulated tens of thousands of times, sampling a noisy result for each contender in every race, then counting how often each one ends up champion. Every default is derived from real data, no hand-set numbers.</p>
