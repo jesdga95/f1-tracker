@@ -1,13 +1,18 @@
-// Deterministic title-win probability from real per-round standings — no Monte
-// Carlo. For a given round, each contender's remaining points are modelled as a
-// normal distribution built from their ACTUAL round-by-round scoring that season
-// (mean and spread of their real points deltas). The probability a driver is
-// champion is then the analytic chance their final total beats every rival's:
+// Deterministic title-win probability from real per-round standings, no Monte
+// Carlo. For a given round R, each contender's remaining points are modelled as a
+// normal distribution: their points so far, plus the races left at the pace they
+// have actually shown through round R (an expanding window, no hindsight). The
+// spread folds in three things: the driver's own round-to-round inconsistency, an
+// "any given Sunday" variance floor, and the uncertainty in that pace estimate
+// itself (large after a couple of races, gone once the season is mostly run). So
+// a runaway leader still concedes a real early chance and only firms to a lock as
+// the rounds run out. The probability a driver is champion is then the analytic
+// chance their final total beats every rival's:
 //
 //   P(i champion) = ∫ f_i(x) · Π_{j≠i} F_j(x) dx
 //
 // computed by numerical integration (no random sampling). Once a season is over
-// (no rounds remain) the points leader is champion outright — 100/0.
+// (no rounds remain) the points leader is champion outright: 100/0.
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const std = (xs) => {
@@ -25,13 +30,18 @@ function ncdf(z) {
   return z >= 0 ? 1 - p : p;
 }
 
-// Per-driver scoring profile: mean and sd of their real points gained per round.
-function profiles(series, ids, N) {
+// Per-round points spread an "any given Sunday" floor grants every driver, so a
+// metronomic leader (near-zero empirical spread) still concedes a real early shot.
+const SUNDAY_SD = 7;
+
+// Per-driver scoring profile from the first `upto` rounds ONLY: an expanding
+// window, so round R is judged on the races actually run by then (no hindsight).
+function profiles(series, ids, upto) {
   const cum = (r, id) => series[r]?.[id] ?? 0;
   const out = {};
   for (const id of ids) {
     const deltas = [];
-    for (let r = 1; r <= N; r++) deltas.push(cum(r, id) - cum(r - 1, id));
+    for (let r = 1; r <= upto; r++) deltas.push(cum(r, id) - cum(r - 1, id));
     out[id] = { mu: mean(deltas), sd: std(deltas) };
   }
   return out;
@@ -49,11 +59,16 @@ function oddsAtRound(R, N, ids, series, prof) {
   }
 
   // Final-points distribution per driver: points so far + a normal for the rest.
-  const dist = ids.map((id) => ({
-    id,
-    m: cum(R, id) + remaining * prof[id].mu,
-    s: Math.max(0.5, Math.sqrt(remaining) * prof[id].sd),
-  }));
+  // The spread blends the empirical per-round sd with the Sunday floor, then adds
+  // the uncertainty in the pace estimate itself: with only R races seen, that
+  // shared error scales the remaining-races term and dominates early, fading to
+  // nothing as R approaches N. This is what keeps the chasers in it at the start.
+  const dist = ids.map((id) => {
+    const sd = Math.sqrt(prof[id].sd ** 2 + SUNDAY_SD ** 2);
+    const variance = remaining * sd ** 2          // round-to-round noise over the races left
+      + (remaining ** 2) * (sd ** 2) / R;          // shared error in the estimated pace
+    return { id, m: cum(R, id) + remaining * prof[id].mu, s: Math.max(0.5, Math.sqrt(variance)) };
+  });
 
   const lo = Math.min(...dist.map((d) => d.m - 8 * d.s));
   const hi = Math.max(...dist.map((d) => d.m + 8 * d.s));
@@ -82,8 +97,10 @@ function oddsAtRound(R, N, ids, series, prof) {
 // matters only as the countback tiebreak for the settled finale).
 export function titleOddsByRound(series, ids, meta) {
   const N = meta.totalRounds;
-  const prof = profiles(series, ids, N);
   const out = {};
-  for (let R = 1; R <= N; R++) out[R] = oddsAtRound(R, N, ids, series, prof);
+  for (let R = 1; R <= N; R++) {
+    const prof = profiles(series, ids, R);   // expanding window: races 1..R only
+    out[R] = oddsAtRound(R, N, ids, series, prof);
+  }
   return out;
 }
