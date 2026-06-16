@@ -1,22 +1,19 @@
-// Orchestration: load the live season, derive parameters, render everything,
-// and wire the driver picker + per-driver tuning sliders. No hardcoded data;
-// if the API is unavailable we say so rather than guess.
+// Boot, render, and wire the driver picker + per-driver tuning sliders. Data
+// comes from the committed snapshot only (see js/api.js).
 
-import { loadSeasonPreferSnapshot } from './api.js';
+import { loadSnapshot } from './api.js';
 import { deriveParams } from './stats.js';
 import { simulate, simulateChunked } from './sim.js';
 import { drawChart, teamColor } from './chart.js';
 
-const YEAR = new Date().getFullYear();
-const BASE_RUNS = 50_000;     // baseline / slider-preview run size
-const HISTORY_RUNS = 4_000;   // cheaper re-sims for each past round
+const BASE_RUNS = 50_000;
+const HISTORY_RUNS = 4_000;
 const BASE_SEED = 12345;
 const DEV_LABELS = ['none', 'slow', 'steady', 'strong', 'rapid', 'runaway'];
 const HAMILTON = 'hamilton';
 
-// Data-driven fidelity lever: blends from "strict" (pure data, a runaway leader
-// stays a near-lock) to "realistic" (season-level pace uncertainty lets the
-// chasers breathe). realism 0..1 maps to the season pace sigma fed to the sim.
+// Fidelity lever: realism 0..1 maps to the season pace sigma fed to the sim.
+// 0 = strict (data as-is, a runaway leader stays a near-lock); 1 = realistic.
 const SIGMA_MAX = 2.5;
 const DEFAULT_REALISM = 0.5;
 const FIDELITY_LABELS = ['strict', 'firm', 'balanced', 'loose', 'realistic'];
@@ -25,17 +22,20 @@ const $ = (id) => document.getElementById(id);
 const kkMultiplier = (step) => 1 + step * 0.15;
 
 const state = {
-  model: null,        // deriveParams() output
-  history: {},        // { round -> { id -> odds } } for rounds 1..now-1
+  season: null,
+  year: null,
+  model: null,
+  history: {},
   selectedId: null,
-  latestOdds: {},     // last simulated odds (pre-KK)
+  latestOdds: {},
   runs: BASE_RUNS,
   realism: DEFAULT_REALISM,
+  tuned: false,
 };
 
 const seasonSigma = () => state.realism * SIGMA_MAX;
 
-// ---- KK easter egg: post-multiply Hamilton's share, renormalize to 100% ----
+// KK easter egg: post-multiply Hamilton's share, renormalize to 100%.
 function displayOdds(raw) {
   const ham = state.model.contenders.find((d) => d.id === HAMILTON);
   const kk = ham ? kkMultiplier(ham.kk || 0) : 1;
@@ -46,7 +46,7 @@ function displayOdds(raw) {
   return out;
 }
 
-// ---- per-round historical odds, computed once from real standings ----
+// Re-sim each past round from its actual standings to get the historical lines.
 function computeHistory(model) {
   const { meta, contenders } = model;
   const history = {};
@@ -74,18 +74,19 @@ function nowSchedule() {
   };
 }
 
-// ---------------- rendering ----------------
 function renderHero(odds) {
   const { contenders, meta } = state.model;
   const fav = contenders.reduce((a, b) => ((odds[b.id] ?? 0) > (odds[a.id] ?? 0) ? b : a));
   const leader = contenders.reduce((a, b) => (b.points > a.points ? b : a));
   $('heroNum').innerHTML = `${(odds[fav.id] ?? 0).toFixed(1)}<span class="pct">%</span>`;
-  $('heroClaim').textContent = `${fav.name} is the most likely ${YEAR} World Champion.`;
-  $('heroSub').textContent =
-    `A Monte Carlo estimate from real classification after Round ${meta.round}: `
-    + `${leader.name} leads on ${leader.points} pts, with ${meta.gpLeft} Grands Prix `
-    + `and ${meta.sprintsLeft} sprint${meta.sprintsLeft === 1 ? '' : 's'} still to run. `
-    + `Pick a driver below and bend the assumptions.`;
+  $('heroClaim').textContent = `${fav.name} is the most likely ${state.year} World Champion.`;
+
+  const sprints = `${meta.sprintsLeft} sprint${meta.sprintsLeft === 1 ? '' : 's'}`;
+  const standings = `${leader.name} leads on ${leader.points} pts after Round ${meta.round}, `
+    + `with ${meta.gpLeft} Grands Prix and ${sprints} still to run.`;
+  $('heroSub').textContent = state.tuned
+    ? `Your tuned scenario at ${FIDELITY_LABELS[Math.round(state.realism * 4)]} fidelity. ${standings}`
+    : `A Monte Carlo estimate from real classification. ${standings} Pick a driver below and bend the assumptions.`;
   $('hero').dataset.bg = fav.num || '';
 }
 
@@ -134,19 +135,15 @@ function renderAll(rawOdds) {
   $('stampN').textContent = state.runs.toLocaleString();
 }
 
-// Reflect whether we're on a committed snapshot (with its date) or live data.
 function showDataSource(fetchedAt) {
   const el = $('dataSrc');
   if (!el) return;
-  if (fetchedAt) {
-    const when = new Date(fetchedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-    el.textContent = `DATA AS OF ${when.toUpperCase()} · JOLPICA F1`;
-  } else {
-    el.textContent = 'LIVE DATA · JOLPICA F1';
-  }
+  const when = fetchedAt
+    ? new Date(fetchedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase()
+    : null;
+  el.textContent = when ? `DATA AS OF ${when} · JOLPICA F1` : 'DATA VIA JOLPICA F1';
 }
 
-// ---------------- driver picker ----------------
 function renderPicker() {
   $('picker').innerHTML = state.model.contenders.map((d) =>
     `<button class="chip" data-id="${d.id}" aria-pressed="${d.id === state.selectedId}">
@@ -165,7 +162,6 @@ function selectDriver(id) {
   buildControls();
 }
 
-// ---------------- tuning controls (bound to selected driver) ----------------
 function control({ id, label, value, min, max, step, hint, hidden, wide }) {
   return `
     <div class="ctrl${wide ? ' wide' : ''}${hidden ? ' hidden' : ''}">
@@ -187,7 +183,7 @@ function buildControls() {
     control({ id: 'dev', label: 'Development', value: d.dev, min: 0, max: 5, step: 1,
       hint: 'How the car trends over the back half. Manual: too few races to trust a slope.' }),
     control({ id: 'kk', label: 'The Kim K effect', value: d.kk || 0, min: 0, max: 10, step: 1,
-      hint: "Kim's in his corner now. Slide for the power of love. 💋 Zero scientific basis.",
+      hint: "Slide for the power of love 💋",
       hidden: d.id !== HAMILTON }),
     control({ id: 'fidelity', label: 'Data-driven fidelity', value: state.realism * 100,
       min: 0, max: 100, step: 25, wide: true,
@@ -217,30 +213,32 @@ function bindControls(d) {
   [pace, dnf, dev, kk, runs, fidelity].filter(Boolean).forEach((el) =>
     el.addEventListener('input', () => syncLabels(d)));
 
-  // KK is a pure display effect, applied instantly without re-simulating.
-  kk?.addEventListener('input', () => { d.kk = Number(kk.value); renderAll(state.latestOdds); });
+  // KK only re-renders; it never changes the simulation.
+  kk?.addEventListener('input', () => { d.kk = Number(kk.value); state.tuned = true; renderAll(state.latestOdds); });
 
-  // Pace / DNF / development change the model -> re-run on release.
   const apply = () => {
     d.pace = Number(pace.value);
     d.dnf = Number(dnf.value) / 100;
     d.dev = Number(dev.value);
+    state.tuned = true;
     run(`Your assumptions for ${d.name}`);
   };
   [pace, dnf, dev].forEach((el) => el.addEventListener('change', apply));
-  runs.addEventListener('change', () => { state.runs = Number(runs.value); run(`Your assumptions for ${d.name}`); });
+  runs.addEventListener('change', () => {
+    state.runs = Number(runs.value);
+    run(state.tuned ? `Your assumptions for ${d.name}` : 'Baseline');
+  });
 
-  // Fidelity is global: it changes the season model, so history is recomputed too.
+  // Fidelity is global and changes the season model, so history is recomputed.
   fidelity.addEventListener('change', () => {
     state.realism = Number(fidelity.value) / 100;
+    state.tuned = true;
     state.history = computeHistory(state.model);
     run(`${FIDELITY_LABELS[Number(fidelity.value) / 25]} model`);
   });
 }
 
-// ---------------- run control ----------------
 function setBusy(busy, msg) {
-  $('runBtn').disabled = busy;
   $('resetBtn').disabled = busy;
   if (msg != null) $('runState').textContent = msg;
   $('progWrap').classList.toggle('on', busy);
@@ -259,10 +257,10 @@ function run(label, seed = (Date.now() & 0xffffff)) {
 }
 
 function reset() {
-  // Re-derive everything from the cached API data (clears tuning + KK).
-  state.model = deriveParams(state._season);
+  state.model = deriveParams(state.season);
   state.runs = BASE_RUNS;
   state.realism = DEFAULT_REALISM;
+  state.tuned = false;
   state.history = computeHistory(state.model);
   renderLegend();
   renderPicker();
@@ -273,17 +271,16 @@ function reset() {
   run('Baseline', BASE_SEED);
 }
 
-// ---------------- boot ----------------
 async function boot() {
-  $('runBtn').addEventListener('click', () => run(`Your assumptions`));
   $('resetBtn').addEventListener('click', reset);
   try {
-    state._season = await loadSeasonPreferSnapshot(YEAR);
-    state.model = deriveParams(state._season);
+    state.season = await loadSnapshot();
+    state.year = state.season.year;
+    state.model = deriveParams(state.season);
     state.history = computeHistory(state.model);
-    state.selectedId = state.model.contenders[0].id; // default: the championship leader
+    state.selectedId = state.model.contenders[0].id;
 
-    showDataSource(state._season.fetchedAt);
+    showDataSource(state.season.fetchedAt);
     renderLegend();
     renderPicker();
     buildControls();
@@ -291,10 +288,9 @@ async function boot() {
   } catch (err) {
     console.error(err);
     $('heroNum').textContent = '··';
-    $('heroClaim').textContent = 'F1 data is unavailable right now.';
-    $('heroSub').textContent = `Couldn't reach the standings API (${err.message}). It may be rate-limited or down. Try again in a bit.`;
-    $('runState').textContent = 'API unavailable';
-    $('runBtn').disabled = true;
+    $('heroClaim').textContent = 'Data is not available yet.';
+    $('heroSub').textContent = 'Could not load the data snapshot. If this is a fresh deploy, the scheduled job may not have produced data/latest.json yet.';
+    $('runState').textContent = 'No data';
     $('resetBtn').disabled = true;
   }
 }

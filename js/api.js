@@ -1,15 +1,12 @@
-// Thin client for the Jolpica F1 API (the open, Ergast-compatible successor).
-// Everything we need for the model comes from four endpoints. Responses are
-// cached in localStorage with a TTL so we don't hammer the API (it's rate
-// limited to a few requests/second, ~500/day anonymous). Standings only
-// change ~22 times a year, so a long TTL is fine.
+// Jolpica F1 API client. The browser never calls Jolpica directly: it reads the
+// committed data/latest.json via loadSnapshot(). loadSeason() (the live fetch)
+// runs only in scripts/snapshot.mjs under Node.
 
 const BASE = 'https://api.jolpi.ca/ergast/f1';
-const TTL_MS = 1000 * 60 * 30; // 30 minutes
-const PAGE = 100;              // Jolpica's max page size
+const TTL_MS = 1000 * 60 * 30;
+const PAGE = 100;
 
-// localStorage exists in the browser but not when this module is reused by the
-// snapshot script under Node, so guard it and degrade to no caching there.
+// localStorage is absent under Node, so guard it and no-op there.
 const store = (() => { try { return globalThis.localStorage ?? null; } catch { return null; } })();
 
 async function cachedJSON(url) {
@@ -20,7 +17,6 @@ async function cachedJSON(url) {
       if (hit && Date.now() - hit.t < TTL_MS) return hit.d;
     } catch { /* ignore corrupt cache */ }
   }
-
   const res = await fetch(url, { headers: { Accept: 'application/json' } });
   if (!res.ok) throw new Error(`Jolpica ${res.status} on ${url}`);
   const d = await res.json();
@@ -30,7 +26,6 @@ async function cachedJSON(url) {
   return d;
 }
 
-// Walk every page of a paginated MRData list and hand each page to `collect`.
 async function paginate(path, collect) {
   let offset = 0;
   for (;;) {
@@ -41,7 +36,6 @@ async function paginate(path, collect) {
   }
 }
 
-// Current driver standings: leader, points, wins, names, numbers, teams.
 export async function getStandings(year) {
   const list = (await cachedJSON(`${BASE}/${year}/driverStandings/`))
     .MRData.StandingsTable.StandingsLists[0];
@@ -59,8 +53,6 @@ export async function getStandings(year) {
   };
 }
 
-// Every race result of the season, grouped by round. Used to derive pace,
-// reliability and the per-round historical standings.
 export async function getResults(year) {
   const byRound = {};
   await paginate(`${year}/results/`, (d) => {
@@ -71,7 +63,6 @@ export async function getResults(year) {
   return byRound;
 }
 
-// Sprint results, grouped by round (separate, lighter points table).
 export async function getSprintResults(year) {
   const byRound = {};
   await paginate(`${year}/sprint/`, (d) => {
@@ -82,7 +73,6 @@ export async function getSprintResults(year) {
   return byRound;
 }
 
-// Full calendar: total rounds and which weekends are sprints.
 export async function getSchedule(year) {
   const races = (await cachedJSON(`${BASE}/${year}/?limit=${PAGE}`)).MRData.RaceTable.Races;
   return {
@@ -91,7 +81,6 @@ export async function getSchedule(year) {
   };
 }
 
-// One call site to load everything the model needs straight from Jolpica.
 export async function loadSeason(year) {
   const [standings, results, sprints, schedule] = await Promise.all([
     getStandings(year),
@@ -102,20 +91,23 @@ export async function loadSeason(year) {
   return { standings, results, sprints, schedule };
 }
 
-// Pre-baked snapshot committed to the repo by the scheduled GitHub Action.
-// Reading this means a normal visit makes zero calls to the third-party API.
-export async function loadSeasonSnapshot(year) {
-  const res = await fetch(`data/${year}.json`, { cache: 'no-cache' });
-  if (!res.ok) throw new Error(`no snapshot for ${year} (${res.status})`);
-  return res.json();
-}
+const SNAPSHOT_URL = 'data/latest.json';
+const SNAPSHOT_KEY = 'f1-snapshot';
 
-// Prefer the committed snapshot; fall back to a live fetch (local dev before the
-// first snapshot exists, or if the file is somehow missing).
-export async function loadSeasonPreferSnapshot(year) {
+// On fetch failure, fall back to the last snapshot cached in localStorage so a
+// returning visitor still sees data instead of an error.
+export async function loadSnapshot() {
   try {
-    return await loadSeasonSnapshot(year);
-  } catch {
-    return loadSeason(year);
+    const res = await fetch(SNAPSHOT_URL, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(`snapshot ${res.status}`);
+    const data = await res.json();
+    if (store) { try { store.setItem(SNAPSHOT_KEY, JSON.stringify(data)); } catch { /* quota */ } }
+    return data;
+  } catch (err) {
+    if (store) {
+      const cached = store.getItem(SNAPSHOT_KEY);
+      if (cached) return JSON.parse(cached);
+    }
+    throw err;
   }
 }

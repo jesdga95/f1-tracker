@@ -1,23 +1,23 @@
 // Title-odds-by-round chart. Past rounds are real (each point is a re-sim from
-// that round's actual standings, computed in app.js); the dashed tail is a
-// light projection forward from today's live odds.
+// that round's actual standings, computed in app.js); the dashed tail is a light
+// projection forward from today's odds.
 
 import { devToDrift } from './sim.js';
 
-// Constructor colours: [dark, light] gradient stops.
+// Keys match Jolpica's constructor `name` exactly. [dark, bright] gradient stops,
+// from the 2026 grid liveries.
 const TEAM_COLORS = {
-  Mercedes: ['#5a5f66', '#c8ccd2'],
-  Ferrari: ['#9a0000', '#d40000'],
-  McLaren: ['#b8500f', '#ff8000'],
-  'Red Bull': ['#0a1a52', '#2b46c0'],
-  'Aston Martin': ['#0b4f43', '#1f9e85'],
-  'Alpine F1 Team': ['#0b4a8a', '#2d9be0'],
-  Williams: ['#0a3a7a', '#3b78d8'],
-  'RB F1 Team': ['#1a2a6c', '#4b6bd8'],
-  'Racing Bulls': ['#1a2a6c', '#4b6bd8'],
-  'Haas F1 Team': ['#6a6a6a', '#b8b8b8'],
-  Sauber: ['#0a6b35', '#34c759'],
-  'Kick Sauber': ['#0a6b35', '#34c759'],
+  Mercedes: ['#0a4f47', '#00d7b6'],
+  Ferrari: ['#9a0000', '#ed1131'],
+  McLaren: ['#b8500f', '#f47600'],
+  'Red Bull': ['#0a1a52', '#4781d7'],
+  Williams: ['#0a2a6b', '#1868db'],
+  'Aston Martin': ['#0f5040', '#229971'],
+  'Alpine F1 Team': ['#0a5a9a', '#00a1e8'],
+  'RB F1 Team': ['#2a3a8a', '#6c98ff'],
+  Audi: ['#2a2a2e', '#e1051f'],
+  'Cadillac F1 Team': ['#101012', '#e6e7ea'],
+  'Haas F1 Team': ['#5a5d61', '#b8bcc0'],
 };
 const FALLBACK = ['#3a3f46', '#7d828a'];
 
@@ -30,9 +30,8 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
-// Project odds forward from "now" to the end of the season. Heuristic: a driver
-// faster than the field median and developing well gains a little each round,
-// tapering off; everything is renormalized to 100% so the lines stay sane.
+// Heuristic projection: a driver faster than the field median and developing
+// well gains a little each round, tapering off, renormalized to 100%.
 function projectForward(headline, contenders, future) {
   if (future <= 0) return {};
   const medPace = median(contenders.map((d) => d.pace));
@@ -52,18 +51,13 @@ function projectForward(headline, contenders, future) {
   return out;
 }
 
-/**
- * @param {SVGElement} svg
- * @param {object} model - { contenders, history, headline, meta }
- *   history: { round -> { id -> odds } } for rounds 1..now
- *   headline: { id -> odds } live "now" value
- */
+// model: { contenders, history: {round -> {id -> odds}}, headline: {id -> odds}, meta }
 export function drawChart(svg, { contenders, history, headline, meta }) {
   if (!svg) return;
   const W = 720, H = 300, padL = 8, padR = 8, padT = 12, padB = 12;
   const { round: now, totalRounds: N } = meta;
 
-  const x = (i) => padL + (W - padL - padR) * (i / (N - 1)); // i: 0-based round index
+  const x = (i) => padL + (W - padL - padR) * (i / (N - 1));
   const y = (v) => padT + (H - padT - padB) * (1 - v / 100);
 
   const future = projectForward(headline, contenders, N - now);
@@ -91,7 +85,6 @@ export function drawChart(svg, { contenders, history, headline, meta }) {
   for (const d of ordered) {
     const stroke = `url(#g_${d.id})`;
 
-    // Past: rounds 1..now, with the "now" point pinned to the live headline.
     const pastPts = [];
     for (let r = 1; r <= now; r++) {
       const v = r === now ? headline[d.id] : history[r]?.[d.id];
@@ -103,7 +96,6 @@ export function drawChart(svg, { contenders, history, headline, meta }) {
       inner += `<path class="line" d="${path}" stroke="${stroke}"/>`;
     }
 
-    // Future: dashed projection continuing from the "now" point.
     const fut = future[d.id] || [];
     if (fut.length) {
       const futPts = [[x(now - 1), y(headline[d.id] ?? 0)]];

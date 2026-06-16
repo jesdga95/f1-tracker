@@ -15,7 +15,7 @@
     <div class="bignum" id="heroNum">…</div>
     <div class="heroclaim" id="heroClaim">Loading the live championship…</div>
     <p class="herosub" id="heroSub">Pulling real standings and results to build the model.</p>
-    <div class="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">LIVE DATA · JOLPICA F1</span></div>
+    <div class="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">DATA VIA JOLPICA F1</span></div>
   </div>
 </header>
 
@@ -49,8 +49,7 @@
     <div class="controls" id="controls"></div>
 
     <div class="simbtns">
-      <button id="runBtn">Run simulation</button>
-      <button class="ghost" id="resetBtn">Reset to live data</button>
+      <button class="ghost" id="resetBtn">Reset to baseline</button>
       <span class="runstate" id="runState">Loading…</span>
     </div>
     <div class="progwrap" id="progWrap"><div class="progbar" id="progBar"></div></div>
@@ -74,7 +73,9 @@
 
 <footer>
   <div class="wrap">
-    <p class="disclaim"><strong>Read this before you bet your house.</strong> A hobbyist model fed by real results from the Jolpica (Ergast-compatible) F1 API. Pace, reliability and outsider-win rates are estimated from a small sample and regularized toward priors; development is a manual assumption. It ignores qualifying pace, track-specific strengths, weather and live betting markets. Treat the number as a reasonable ballpark, not gospel.</p>
+    <p class="disclaim"><strong>For entertainment only. This is not betting, gambling, investment, or financial advice.</strong> Who Wins the Title? is an unofficial, non-commercial fan project. It is not affiliated with, endorsed by, or associated with Formula 1, the FIA, Formula One Management, or any team, driver, or sponsor. F1 and related marks belong to their respective owners.</p>
+    <p class="disclaim">The percentages are the output of a simplified statistical toy, not predictions, odds, or facts, and they are frequently wrong. The underlying data may be inaccurate, incomplete, or out of date. <strong>Do not use this site for any wager or decision.</strong></p>
+    <p class="disclaim">Provided "as is", without warranty of any kind. To the maximum extent permitted by law, the author accepts no liability for any loss or damage arising from its use. You use it entirely at your own risk.</p>
   </div>
 </footer>
 

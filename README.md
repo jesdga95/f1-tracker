@@ -15,9 +15,9 @@ there for fun.
 
 ## What it does
 
-- Pulls live driver standings, race results, sprints and the calendar from the
-  [Jolpica F1 API](https://github.com/jolpica/jolpica-f1), the open,
-  Ergast-compatible successor.
+- Uses real driver standings, race results, sprints and the calendar from the
+  [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (the open,
+  Ergast-compatible successor), refreshed a few times a day.
 - Derives every model parameter from real data: pace, reliability (DNF rate),
   consistency and the outsider-win rate. No hand-set numbers.
 - Regularizes small-sample noise with shrinkage toward sensible priors, so a
@@ -65,47 +65,35 @@ Pages. `index.html` is the entry point, so it serves at the root URL.
 ## Project layout
 
 ```
-index.html                    structure only (no logic, no data)
-styles.css                    all the presentation
-js/api.js                     Jolpica client, localStorage cache, snapshot loader
-js/stats.js                   derives model params from results (shrinkage, Winsorized pace, ...)
-js/sim.js                     the generalized Monte Carlo engine
-js/chart.js                   odds-by-round chart with team colors
-js/app.js                     boot, rendering, the driver picker and tuning controls
-scripts/snapshot.mjs          fetches the season and writes data/<year>.json
+index.html                      structure only (no logic, no data)
+styles.css                      all the presentation
+js/api.js                       Jolpica client (build-time) + snapshot loader (browser)
+js/stats.js                     derives model params from results (shrinkage, Winsorized pace, ...)
+js/sim.js                       the generalized Monte Carlo engine
+js/chart.js                     odds-by-round chart with team colors
+js/app.js                       boot, rendering, the driver picker and tuning controls
+scripts/snapshot.mjs            builds data/latest.json from the live API
 .github/workflows/snapshot.yml  cron that refreshes the snapshot and commits it
-data/2026.json                committed data snapshot (the app's primary source)
+data/latest.json                committed snapshot the site reads
 ```
 
-## Data freshness and caching
+## Data and refresh
 
-This repo uses a **committed snapshot** as its primary data source:
+The browser never calls the F1 API. It reads a committed snapshot,
+`data/latest.json`, so every visit is instant and a third-party outage or a
+traffic spike cannot break the page. A returning visitor is covered even offline:
+the last snapshot is also cached in `localStorage`.
 
-- A scheduled GitHub Action ([.github/workflows/snapshot.yml](.github/workflows/snapshot.yml))
-  runs `scripts/snapshot.mjs` four times a day (every 6 hours). It fetches the
-  season from Jolpica, writes [data/2026.json](data), and commits it only if the
-  data changed.
-- The app loads that file first (`loadSeasonPreferSnapshot` in
-  [js/api.js](js/api.js)), so a normal visit makes **zero** calls to the
-  third-party API. It loads instantly and keeps working even if Jolpica is down.
-- If the snapshot is missing (local dev before the first run), it falls back to a
-  live fetch, which is itself cached in `localStorage` for 30 minutes.
+A scheduled GitHub Action ([.github/workflows/snapshot.yml](.github/workflows/snapshot.yml))
+runs `scripts/snapshot.mjs` every 6 hours. It fetches the current season from
+Jolpica, strips each result to the few fields the model uses, and rewrites
+`data/latest.json` only when the standings actually changed. If a fetch fails it
+exits without writing, so the last good snapshot stays in place. It always
+snapshots the most recent season that has standings, so it rolls into the next
+year on its own with no off-season gap.
 
-GitHub Actions minutes are free and unlimited on public repos, so this costs
-nothing. One setup note: in **Settings > Actions > General > Workflow
-permissions**, make sure "Read and write permissions" is enabled so the bot can
-push the refresh commit. Trigger a first run manually from the Actions tab (the
-workflow has a "Run workflow" button), or just commit the seeded `data/2026.json`.
-
-Other options if it ever outgrows this:
-
-- **Vercel serverless caching proxy.** An `api/standings.js` function that fetches
-  Jolpica and returns `Cache-Control: s-maxage=900, stale-while-revalidate=3600`,
-  so the CDN serves one cached copy to everyone. Good if you want fresher data
-  than a cron without per-visitor calls.
-- **localStorage TTL only.** Drop the snapshot and rely purely on the per-browser
-  cache already in `js/api.js`. Simplest, but every new visitor still makes the
-  first call.
+Setup: in **Settings > Actions > General > Workflow permissions**, enable "Read
+and write permissions" so the bot can push the refresh commit.
 
 ## Data and credits
 
@@ -116,10 +104,17 @@ affiliation.
 
 ## Disclaimer
 
-A hobbyist model built on regularized small-sample estimates and one manual
-assumption (development). It ignores qualifying pace, track-specific strengths,
-weather and live betting markets. This is not betting advice. Treat the number as a
-ballpark, not gospel.
+For entertainment only. This is not betting, gambling, investment, or financial
+advice. Who Wins the Title? is an unofficial, non-commercial fan project, not
+affiliated with or endorsed by Formula 1, the FIA, Formula One Management, or any
+team, driver, or sponsor. F1 and related marks belong to their respective owners.
+
+The percentages are the output of a simplified statistical toy, not predictions,
+odds, or facts, and they are frequently wrong. The underlying data may be
+inaccurate, incomplete, or out of date. Do not use this site for any wager or
+decision. It is provided "as is", without warranty of any kind; to the maximum
+extent permitted by law, the author accepts no liability for any loss or damage
+arising from its use. You use it entirely at your own risk.
 
 ## License
 

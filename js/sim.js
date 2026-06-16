@@ -1,13 +1,10 @@
-// Generalized Monte Carlo: simulate the remaining season for any set of
-// contenders and count how often each one ends up champion. Driver-agnostic:
-// the old version hardcoded three names; this takes whatever contenders the
-// API hands us.
+// Monte Carlo over the remaining season for any set of contenders; returns each
+// driver's share of simulated championships.
 
 const GP_TABLE = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 const SP_TABLE = [8, 7, 6, 5, 4, 3, 2, 1];
 const DEV_STEADY = 2;
 
-// Deterministic, seedable PRNG so a given config reproduces exactly.
 export function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -24,9 +21,7 @@ function gauss(rand, m, sd) {
   return m + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Development slider (0..5) -> per-race shift in expected finishing position.
-// 2 ("steady") is neutral; higher improves the car (lower finishes), lower
-// means it's sliding back toward the pack.
+// Development slider (0..5) to a per-race shift in expected finish; 2 is neutral.
 export const devToDrift = (dev) => (DEV_STEADY - dev) * 0.015;
 
 function sampleFinish(rand, m, sd, dnf) {
@@ -34,9 +29,7 @@ function sampleFinish(rand, m, sd, dnf) {
   return Math.max(1, gauss(rand, m, sd));
 }
 
-// Run one race, add points into `totals`. `rivalWin` is the chance an
-// unmodeled outsider grabs the win, which simply bumps every contender down
-// one finishing slot.
+// rivalWin: chance an unmodeled outsider wins, bumping every contender down a slot.
 function scoreRace(rand, drivers, means, table, rivalWin, totals) {
   const order = drivers
     .map((d) => [d.id, sampleFinish(rand, means[d.id], d.sd, d.dnf)])
@@ -46,14 +39,11 @@ function scoreRace(rand, drivers, means, table, rivalWin, totals) {
   for (const [id] of order) { totals[id] += table[rank] || 0; rank += 1; }
 }
 
-// Simulate a single season; return the champion's id.
 function simSeason(rand, drivers, schedule) {
   const totals = {};
   const means = {};
-  // Season-level pace uncertainty (the "data-driven fidelity" lever): each
-  // season draws a one-off offset to every driver's expected finish, modelling
-  // how little we really know their true level over the rest of the year.
-  // seasonSigma 0 == strict (pure data); larger == more realistic upsets.
+  // seasonSigma is the fidelity lever: a one-off per-season pace offset per
+  // driver. 0 = strict (data as-is); higher = more upsets.
   const sigma = schedule.seasonSigma || 0;
   for (const d of drivers) {
     totals[d.id] = d.points;
@@ -73,7 +63,6 @@ function simSeason(rand, drivers, schedule) {
   return champ;
 }
 
-// Normalize an input contender list into the flat shape simSeason wants.
 function prepare(contenders, schedule) {
   const drivers = contenders.map((d) => ({
     id: d.id,
@@ -94,7 +83,6 @@ function prepare(contenders, schedule) {
   return { drivers, prepared };
 }
 
-// Synchronous batch, used for the cheap historical-odds re-sims at boot.
 export function simulate(contenders, schedule, runs, seed) {
   const { drivers, prepared } = prepare(contenders, schedule);
   const rand = mulberry32(seed);
@@ -105,8 +93,7 @@ export function simulate(contenders, schedule, runs, seed) {
   return odds;
 }
 
-// Chunked async run so the UI stays responsive (and we can show progress) on
-// big 100k-season runs.
+// Chunked variant so big runs don't block the UI thread.
 export function simulateChunked(contenders, schedule, runs, seed, { onProgress, onDone }) {
   const { drivers, prepared } = prepare(contenders, schedule);
   const rand = mulberry32(seed);

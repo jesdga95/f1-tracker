@@ -190,6 +190,7 @@ button.ghost:hover{background:rgba(255,255,255,.06)}
 
 footer{padding:36px 0 calc(48px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
 .disclaim{font-size:12.5px;color:var(--muted);max-width:64ch;line-height:1.6}
+.disclaim + .disclaim{margin-top:12px}
 .disclaim strong{color:var(--silver);font-weight:600}
 
 /* ===== TABLET / DESKTOP SCALE-UP ===== */
