@@ -93,7 +93,7 @@ function writeManifest(manifest) {
   try { unchanged = readFileSync(manifestPath, 'utf8') === serialized; } catch { /* none */ }
   if (unchanged) return;
   writeFileSync(manifestPath, serialized);
-  console.log(`Wrote data/seasons.json | current ${manifest.current} | years ${manifest.years.join(', ')}`);
+  console.log(`Wrote data/seasons.json | years ${manifest.years.join(', ')}`);
 }
 
 mkdirSync(dataDir, { recursive: true });
@@ -123,4 +123,7 @@ for (let y = live.year - 1; y >= EARLIEST_YEAR; y--) {
   }
 }
 
-writeManifest({ current: live.year, years: years.sort((a, b) => a - b) });
+// The manifest is just the set of seasons we have. The app shows the newest one
+// live only while its season is in progress (this calendar year, races left);
+// otherwise it, too, is a read-only replay. So no "current" flag is needed here.
+writeManifest({ years: years.sort((a, b) => a - b) });

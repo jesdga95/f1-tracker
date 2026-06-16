@@ -21,10 +21,12 @@ const FIDELITY_LABELS = ['strict', 'firm', 'balanced', 'loose', 'realistic'];
 
 const $ = (id) => document.getElementById(id);
 const kkMultiplier = (step) => 1 + step * 0.15;
+const currentYear = () => new Date().getFullYear();
 
 const state = {
-  manifest: null,      // { current, years } from data/seasons.json
-  liveYear: null,      // the one tunable season
+  manifest: null,      // { years: [...] } from data/seasons.json
+  liveYear: null,      // newest season we have data for (max of manifest.years)
+  liveActive: false,   // is that season actually in progress (this calendar year, races left)?
   seasons: {},         // year -> raw snapshot cache
   season: null,        // raw snapshot for the displayed year
   year: null,          // displayed year
@@ -80,6 +82,21 @@ function nowSchedule() {
   };
 }
 
+// The bignum is sized in vw, so a long value (a wayback "395.5PTS" beats a live
+// "98.4%") can run past the gutter on a narrow screen. Shrink to fit when, and
+// only when, the single line would overflow its container.
+function fitHeroNum() {
+  const el = $('heroNum');
+  if (!el) return;
+  el.style.fontSize = '';                  // restore the CSS vw value before measuring
+  const avail = el.clientWidth;            // block fills the container; this is the room we have
+  const content = el.scrollWidth;          // no spaces in the value, so this is its true width
+  if (avail > 0 && content > avail) {
+    const base = parseFloat(getComputedStyle(el).fontSize);
+    el.style.fontSize = `${base * avail / content}px`;
+  }
+}
+
 // Wayback hero: the REAL championship standings after a chosen round — points
 // only, no probability (the chart and bars carry the odds). pts = points that round.
 function renderHeroWayback(pts, round) {
@@ -89,6 +106,7 @@ function renderHeroWayback(pts, round) {
   const leader = ranked[0];
   const second = ranked[1];
   $('heroNum').innerHTML = `${pts[leader.id] ?? 0}<span class="pct">PTS</span>`;
+  fitHeroNum();
 
   if (round >= N) {
     const champ = contenders[0];                 // standings are championship-ordered (countback-safe)
@@ -114,6 +132,7 @@ function renderHero(odds) {
   const fav = contenders.reduce((a, b) => ((odds[b.id] ?? 0) > (odds[a.id] ?? 0) ? b : a));
   const leader = contenders.reduce((a, b) => (b.points > a.points ? b : a));
   $('heroNum').innerHTML = `${(odds[fav.id] ?? 0).toFixed(1)}<span class="pct">%</span>`;
+  fitHeroNum();
   $('heroClaim').textContent = `${fav.name} is the most likely ${state.year} World Champion.`;
 
   const sprints = `${meta.sprintsLeft} sprint${meta.sprintsLeft === 1 ? '' : 's'}`;
@@ -338,7 +357,7 @@ function updateWayback(round) {
 function renderSeasonPicker() {
   const years = [...state.manifest.years].sort((a, b) => b - a);   // newest first
   $('seasonPicker').innerHTML = years.map((y) => {
-    const tag = y === state.liveYear
+    const tag = y === state.liveYear && state.liveActive
       ? '<span class="num live">LIVE</span>'
       : '<span class="num">replay</span>';
     return `<button class="chip" data-year="${y}" aria-pressed="${y === state.year}">${y}${tag}</button>`;
@@ -355,7 +374,12 @@ function updateSeasonActive() {
 // Toggle UI between the live (simulated, tunable) season and a wayback season
 // (real, settled championship data — no Monte Carlo).
 function applyMode() {
-  state.tunable = state.year === state.liveYear && state.model.meta.gpLeft > 0;
+  // Live only when the newest season is THIS calendar year and still has races
+  // left. At end of season (gpLeft 0) or once the year rolls over with no new
+  // data, the newest season falls through to wayback (replay) like the rest.
+  state.tunable = state.year === state.liveYear
+    && state.liveYear >= currentYear()
+    && state.model.meta.gpLeft > 0;
   $('sim').hidden = !state.tunable;            // "Run your own season" is live-only
   $('method').hidden = !state.tunable;         // "What's under the hood" describes the live model
   $('racePick').hidden = state.tunable;        // the race scrubber is wayback-only
@@ -400,6 +424,7 @@ async function selectSeason(year) {
   state.selectedId = state.model.contenders[0].id;
 
   applyMode();                 // sets state.tunable from the model
+  if (year === state.liveYear) state.liveActive = state.tunable;   // resolve the LIVE badge
   showDataSource(state.season.fetchedAt);
   renderLegend();
   if (state.tunable) {
@@ -429,11 +454,16 @@ function reset() {
 
 async function boot() {
   $('resetBtn').addEventListener('click', reset);
+  // The bignum scales with viewport width, so re-fit on resize; and re-fit once
+  // the display font loads, since its metrics differ from the fallback.
+  let fitT;
+  window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(fitHeroNum, 100); });
+  document.fonts?.ready.then(fitHeroNum);
   try {
     state.manifest = await loadManifest();
-    state.liveYear = state.manifest.current;
-    renderSeasonPicker();
-    await selectSeason(state.liveYear);
+    state.liveYear = Math.max(...state.manifest.years);   // newest season we have data for
+    await selectSeason(state.liveYear);         // load it first so liveActive is known
+    renderSeasonPicker();                       // then badge LIVE only if it's in progress
   } catch (err) {
     console.error(err);
     $('heroNum').textContent = '··';

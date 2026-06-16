@@ -135,8 +135,8 @@ async function loadCached(url, key) {
   }
 }
 
-// Lists the available seasons: { current, years: [...] }. `current` is the live
-// (tunable) season; the rest are the read-only wayback set.
+// Lists the available seasons: { years: [...] }. The app runs the newest year
+// live only while its season is in progress; every other year is read-only wayback.
 export function loadManifest() {
   return loadCached('data/seasons.json', 'f1-manifest');
 }
