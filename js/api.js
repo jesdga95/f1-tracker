@@ -107,6 +107,23 @@ export async function getSchedule(year) {
   };
 }
 
+// Season-accurate car numbers. The standings endpoint's Driver.permanentNumber
+// is a single global value that tracks a driver's CURRENT number (e.g. the
+// reigning champion adopting #1), so it misreports history the moment a driver
+// changes number: once Norris took #1 for 2026, every past season reported him
+// as #1 too. Each race result's `number` field is the number actually run that
+// season, so derive from the season's own results. Later rounds win, so a
+// mid-season swap settles on the final number.
+function seasonNumbers(resultsByRound) {
+  const nums = {};
+  for (const round of Object.keys(resultsByRound).sort((a, b) => a - b)) {
+    for (const r of resultsByRound[round]) {
+      if (r.number) nums[r.Driver.driverId] = r.number;
+    }
+  }
+  return nums;
+}
+
 export async function loadSeason(year) {
   const [standings, results, sprints, schedule] = await Promise.all([
     getStandings(year),
@@ -114,6 +131,9 @@ export async function loadSeason(year) {
     getSprintResults(year),
     getSchedule(year),
   ]);
+  // Override the global permanentNumber with each driver's season number.
+  const nums = seasonNumbers(results);
+  for (const s of standings.standings) s.num = nums[s.id] || s.num;
   return { standings, results, sprints, schedule };
 }
 
