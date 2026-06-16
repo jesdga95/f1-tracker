@@ -9,7 +9,9 @@ It started life as a meme about Lewis Hamilton's odds of an 8th title, then turn
 into an actual (if hobbyist) forecasting toy. Not monetized, not serious, just out
 there for fun.
 
-> Screenshot: drop one here once you deploy.
+<img width="800" height="600" alt="f1-tracker-peach vercel app_" src="https://github.com/user-attachments/assets/1c792cde-5a8d-4996-b636-32fd1ceb155d" />
+
+### Live deployment: [Link](https://f1-tracker-peach.vercel.app)
 
 ## What it does
 
