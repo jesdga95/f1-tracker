@@ -1,0 +1,7 @@
+# Everything is crawlable on purpose: the page renders its content from
+# data/*.json at runtime, so blocking /data/ would leave crawlers indexing an
+# empty shell.
+User-agent: *
+Allow: /
+
+Sitemap: https://f1-tracker.jgulfo.com/sitemap.xml

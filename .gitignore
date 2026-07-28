@@ -8,3 +8,10 @@ Thumbs.db
 node_modules/
 .vercel/
 *.log
+__pycache__/
+
+# Local one-off asset generators. Their output (favicon.ico, assets/*.png) is
+# committed, so nothing here is needed to build, deploy or serve the site.
+# scripts/snapshot.mjs is NOT ignored: the GitHub Action runs it.
+scripts/make-icons.py
+scripts/og-card.html

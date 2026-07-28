@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Who Wins the Title?">
+  <title>Who Wins the Title?</title>
+  <rect width="64" height="64" rx="12" fill="#0a0a0c"/>
+  <!-- Three ascending title-odds bars, leaned forward for speed. -->
+  <g transform="translate(0 52) skewX(-5.5) translate(0 -52)">
+    <rect x="8"    y="32" width="13" height="20" rx="1.5" fill="#8a8d94"/>
+    <rect x="24.5" y="22" width="13" height="30" rx="1.5" fill="#c8ccd2"/>
+    <rect x="41"   y="12" width="13" height="40" rx="1.5" fill="#d40000"/>
+  </g>
+</svg>

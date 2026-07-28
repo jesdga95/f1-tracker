@@ -4,8 +4,73 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0c">
-<title>Who Wins the Title? · F1 Championship Odds</title>
+<meta name="color-scheme" content="dark">
+
+<title>Who Wins the Title? · Live F1 Championship Odds</title>
+<meta name="description" content="Live Formula 1 title odds from real standings. The rest of the season is simulated tens of thousands of times, charted round by round. Replay 2020 to now.">
+<link rel="canonical" href="https://f1-tracker.jgulfo.com/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="Jesus Gulfo">
+
+<!-- Icons. favicon.svg is the mark's source of truth; the .ico and the PNGs
+     below are rasterised from it. -->
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="application-name" content="Who Wins the Title?">
+<meta name="apple-mobile-web-app-title" content="Title Odds">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- Share card -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Who Wins the Title?">
+<meta property="og:url" content="https://f1-tracker.jgulfo.com/">
+<meta property="og:title" content="Who Wins the Title? · Live F1 Championship Odds">
+<meta property="og:description" content="Real Formula 1 standings in, tens of thousands of simulated seasons out. Live title odds for every contender, round by round.">
+<meta property="og:image" content="https://f1-tracker.jgulfo.com/assets/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Who wins the title? Live F1 championship odds, simulated.">
+<meta property="og:locale" content="en_GB">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Who Wins the Title? · Live F1 Championship Odds">
+<meta name="twitter:description" content="Real Formula 1 standings in, tens of thousands of simulated seasons out. Live title odds for every contender, round by round.">
+<meta name="twitter:image" content="https://f1-tracker.jgulfo.com/assets/og.png">
+<meta name="twitter:image:alt" content="Who wins the title? Live F1 championship odds, simulated.">
+
+<!-- Fonts load straight from the document: an @import inside styles.css would
+     chain html > css > css > font and delay first paint. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Archivo+Black&family=Space+Mono:wght@400;700&display=swap">
 <link rel="stylesheet" href="styles.css">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Who Wins the Title?",
+  "alternateName": "F1 Title Odds",
+  "url": "https://f1-tracker.jgulfo.com/",
+  "description": "A live Formula 1 championship forecaster. It derives a model from real standings and results, then simulates the rest of the season in the browser to estimate each contender's title odds, with a wayback replay of every season from 2020.",
+  "applicationCategory": "SportsApplication",
+  "operatingSystem": "Any",
+  "browserRequirements": "Requires JavaScript",
+  "isAccessibleForFree": true,
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+  "inLanguage": "en",
+  "image": "https://f1-tracker.jgulfo.com/assets/og.png",
+  "screenshot": "https://f1-tracker.jgulfo.com/assets/og.png",
+  "author": { "@type": "Person", "name": "Jesus Gulfo" },
+  "license": "https://opensource.org/licenses/MIT",
+  "codeRepository": "https://github.com/jesdga95/f1-tracker",
+  "about": { "@type": "Thing", "name": "Formula One World Championship" },
+  "disambiguatingDescription": "An unofficial, non-commercial fan project for entertainment only. Not betting, gambling, or financial advice, and not affiliated with Formula 1 or the FIA."
+}
+</script>
 </head>
 <body>
 
@@ -13,8 +78,11 @@
   <div class="wrap">
     <div class="eyebrow" id="eyebrow">Live Title Race · Monte Carlo</div>
     <div class="bignum" id="heroNum">…</div>
-    <div class="heroclaim" id="heroClaim">Loading the live championship…</div>
+    <h1 class="heroclaim" id="heroClaim">Who wins the F1 World Championship?</h1>
     <p class="herosub" id="heroSub">Pulling real standings and results to build the model.</p>
+    <noscript>
+      <p class="herosub">This forecast is built in your browser, so JavaScript is required. The site reads committed snapshots of real F1 standings, results and the calendar, simulates the rest of the season to estimate each contender's title odds, and can replay any season from 2020 onward.</p>
+    </noscript>
     <div class="stamp" id="stamp">MODEL STATE · <span class="live" id="stampN">···</span> SIMULATED SEASONS · <span id="dataSrc">DATA VIA JOLPICA F1</span></div>
   </div>
 </header>

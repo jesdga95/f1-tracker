@@ -9,7 +9,7 @@ hobbyist) forecasting toy. Just out there for fun.
 
 <img width="800" height="600" alt="Who Wins the Title?" src="https://github.com/user-attachments/assets/1c792cde-5a8d-4996-b636-32fd1ceb155d" />
 
-### Live: [f1-tracker-peach.vercel.app](https://f1-tracker-peach.vercel.app)
+### Live: [f1-tracker.jgulfo.com](https://f1-tracker.jgulfo.com)
 
 ## What it does
 
@@ -56,10 +56,23 @@ npx serve
 No build step. Any static host works (Vercel, GitHub Pages, Netlify);
 `index.html` is the entry point.
 
+## Icons and the share card
+
+The mark is [favicon.svg](favicon.svg), and everything raster derives from it:
+`favicon.ico` plus the Apple, PWA and maskable icons in [assets/](assets/). The
+1200x630 Open Graph card, `assets/og.png`, is rendered from a small HTML card in
+the site's own type and palette. Both generators are local one-offs and are not
+committed (see [.gitignore](.gitignore)); their output is, so a clone or a deploy
+never has to run anything.
+
+`site.webmanifest`, `robots.txt` and `sitemap.xml` sit at the root. The sitemap
+hardcodes the canonical URL, so update both it and the `og:` / `canonical` tags
+in `index.html` if the domain ever changes again.
+
 ## Data
 
 The browser never calls the F1 API. A GitHub Action runs
-[scripts/snapshot.mjs](scripts/snapshot.mjs) every 6 hours and commits one
+[scripts/snapshot.mjs](scripts/snapshot.mjs) every Monday and commits one
 `data/{year}.json` per season plus a `data/seasons.json` manifest. The live
 season is refreshed every run (only when standings change); past seasons are
 fetched once to capture their official per-round standings, then frozen. The
