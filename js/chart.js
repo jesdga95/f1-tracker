@@ -87,14 +87,17 @@ function projectForward(headline, contenders, future) {
 }
 
 // model: { contenders, history: {round -> {id -> odds}}, headline: {id -> odds}, meta }
-export function drawChart(svg, { contenders, history, headline, meta }) {
+export function drawChart(svg, { contenders, history, headline, meta, decided }) {
   if (!svg) return;
   const { W, H, padL, padR, padT, padB } = GEO;
   const { round: now, totalRounds: N } = meta;
   const { x, y } = scales(meta);
   const styles = lineStyles(contenders);
 
-  const future = projectForward(headline, contenders, N - now);
+  // A mathematically decided title can't move, so its tail runs flat at 100/0.
+  const future = decided
+    ? Object.fromEntries(contenders.map((d) => [d.id, Array(N - now).fill(headline[d.id] ?? 0)]))
+    : projectForward(headline, contenders, N - now);
 
   let inner = '<defs>';
   for (const d of contenders) {

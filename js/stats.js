@@ -131,6 +131,7 @@ export function deriveParams(season, opts = {}) {
     contenders,
     rivalWin: Math.round(rivalWin * 1000) / 1000,
     meta: {
+      year: season.year,
       round: now,
       totalRounds: schedule.totalRounds,
       gpLeft: schedule.totalRounds - now,
