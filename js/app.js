@@ -6,6 +6,7 @@ import { deriveParams } from './stats.js';
 import { simulate, simulateChunked } from './sim.js';
 import { drawChart, drawMarker, teamColor, lineStyles, legendSwatch } from './chart.js';
 import { titleOddsByRound } from './odds.js';
+import { clinchedChampion, pointsLeft, settledOdds } from './clinch.js';
 
 const BASE_RUNS = 50_000;
 const HISTORY_RUNS = 4_000;
@@ -27,10 +28,13 @@ const state = {
   manifest: null,      // { years: [...] } from data/seasons.json
   liveYear: null,      // newest season we have data for (max of manifest.years)
   liveActive: false,   // is that season actually in progress (this calendar year, races left)?
+  liveDecided: false,  // ...and is its title already mathematically clinched?
   seasons: {},         // year -> raw snapshot cache
   season: null,        // raw snapshot for the displayed year
   year: null,          // displayed year
   tunable: false,      // is the displayed season the live one (toggles on)?
+  decided: false,      // live season whose title is already mathematically clinched
+  clinchedId: null,    // that champion's id
   gen: 0,              // bumped on each season switch / run to drop stale sims
   model: null,
   history: {},
@@ -60,6 +64,11 @@ function computeHistory(model) {
   const history = {};
   for (let r = 1; r < meta.round; r++) {
     const pts = model.pointsByRound[r] || {};
+    const champ = clinchedChampion(pts, meta, r);
+    if (champ && contenders.some((d) => d.id === champ)) {
+      history[r] = settledOdds(contenders.map((d) => d.id), champ);
+      continue;
+    }
     const field = contenders.map((d) => ({ ...d, points: pts[d.id] ?? 0 }));
     const schedule = {
       nGP: meta.totalRounds - r,
@@ -127,6 +136,29 @@ function renderHeroWayback(pts, round) {
   $('hero').dataset.bg = leader.num || '';
 }
 
+// Live season, title already mathematically settled: no forecast left to make,
+// so lead with the champion and why nobody can catch them any more.
+function renderHeroDecided() {
+  const { meta } = state.model;
+  const grid = state.season.standings.standings;   // whole grid, championship-ordered
+  const champ = grid.find((d) => d.id === state.clinchedId);
+  const rival = grid.find((d) => d.id !== state.clinchedId);
+  const { gpLeft, max } = pointsLeft(meta, meta.round);
+  const gap = rival ? champ.points - rival.points : champ.points;
+  const gps = `${gpLeft} Grand${gpLeft === 1 ? '' : 's'} Prix`;
+  const sprints = meta.sprintsLeft
+    ? ` and ${meta.sprintsLeft} sprint${meta.sprintsLeft === 1 ? '' : 's'}` : '';
+
+  $('heroNum').innerHTML = `${champ.points}<span class="pct">PTS</span>`;
+  fitHeroNum();
+  $('heroClaim').textContent = `${champ.name} is the ${state.year} World Champion.`;
+  $('heroSub').textContent = `Title clinched mathematically after Round ${meta.round}: `
+    + (rival ? `${gap} pts clear of ${rival.name}, ` : '')
+    + `with only ${max} pts left to win across ${gps}${sprints}. `
+    + `The remaining races are for the record books.`;
+  $('hero').dataset.bg = champ.num || '';
+}
+
 function renderHero(odds) {
   const { contenders, meta } = state.model;
   const fav = contenders.reduce((a, b) => ((odds[b.id] ?? 0) > (odds[a.id] ?? 0) ? b : a));
@@ -147,7 +179,7 @@ function renderHero(odds) {
 // pointsMap is optional: in wayback, pass the real standings as of the chosen
 // round so the gap tags reflect that moment and the actual points sit beside the
 // title chance; omit it for the live season (chance only).
-function renderBars(odds, pointsMap) {
+function renderBars(odds, pointsMap, champId) {
   const { contenders } = state.model;
   const ptsOf = (d) => (pointsMap ? (pointsMap[d.id] ?? 0) : d.points);
   const sorted = [...contenders].sort((a, b) => (odds[b.id] ?? 0) - (odds[a.id] ?? 0));
@@ -156,7 +188,7 @@ function renderBars(odds, pointsMap) {
   $('bars').innerHTML = sorted.map((d) => {
     const pct = odds[d.id] ?? 0;
     const gap = ptsOf(d) - leaderPts;
-    const tag = gap === 0 ? 'LEADER' : `${gap} PTS`;
+    const tag = d.id === champId ? 'CHAMPION' : gap === 0 ? 'LEADER' : `${gap} PTS`;
     const points = pointsMap ? `<span class="dpts">${ptsOf(d)} pts</span>` : '';
     return `
       <div class="driver">
@@ -183,6 +215,7 @@ function renderChart(odds) {
     history: state.history,
     headline: odds,
     meta: state.model.meta,
+    decided: state.decided,
   });
 }
 
@@ -198,7 +231,7 @@ function renderAll(rawOdds) {
 function showDataSource(fetchedAt) {
   const el = $('dataSrc');
   if (!el) return;
-  if (!state.tunable) { el.textContent = `${state.year} FINAL · JOLPICA F1`; return; }
+  if (!state.tunable && !state.decided) { el.textContent = `${state.year} FINAL · JOLPICA F1`; return; }
   const when = fetchedAt
     ? new Date(fetchedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toUpperCase()
     : null;
@@ -340,6 +373,21 @@ function enterWayback() {
   updateWayback(state.wayRound);
 }
 
+// Live season with the title already clinched: show the real history up to now,
+// the settled 100/0, and the champion. No simulation of the rest is needed.
+function enterDecided() {
+  setBusy(false);
+  const { contenders, meta } = state.model;
+  state.history = computeHistory(state.model);
+  const odds = settledOdds(contenders.map((d) => d.id), state.clinchedId);
+  state.latestOdds = odds;
+  const pts = Object.fromEntries(state.season.standings.standings.map((d) => [d.id, d.points]));
+  renderHeroDecided();
+  renderBars(odds, pts, state.clinchedId);
+  renderChart(odds);
+  $('barsLabel').textContent = `Champion decided · after Round ${meta.round} of ${meta.totalRounds}`;
+}
+
 // The title odds + real standings + chart marker as they stood after `round`.
 function updateWayback(round) {
   const { meta, contenders } = state.model;
@@ -358,7 +406,9 @@ function renderSeasonPicker() {
   const years = [...state.manifest.years].sort((a, b) => b - a);   // newest first
   $('seasonPicker').innerHTML = years.map((y) => {
     const tag = y === state.liveYear && state.liveActive
-      ? '<span class="num live">LIVE</span>'
+      ? (state.liveDecided
+        ? '<span class="num live">DECIDED</span>'
+        : '<span class="num live">LIVE</span>')
       : '<span class="num">replay</span>';
     return `<button class="chip" data-year="${y}" aria-pressed="${y === state.year}">${y}${tag}</button>`;
   }).join('');
@@ -377,17 +427,31 @@ function applyMode() {
   // Live only when the newest season is THIS calendar year and still has races
   // left. At end of season (gpLeft 0) or once the year rolls over with no new
   // data, the newest season falls through to wayback (replay) like the rest.
-  state.tunable = state.year === state.liveYear
+  const { meta } = state.model;
+  const inProgress = state.year === state.liveYear
     && state.liveYear >= currentYear()
-    && state.model.meta.gpLeft > 0;
+    && meta.gpLeft > 0;
+  // Races left but nobody can catch the leader: the title is decided, so there
+  // is nothing to forecast or tune. Checked against the whole grid's points.
+  const grid = state.season.standings.standings;
+  state.clinchedId = inProgress
+    ? clinchedChampion(
+      Object.fromEntries(grid.map((d) => [d.id, d.points])),
+      meta, meta.round,
+      Object.fromEntries(grid.map((d) => [d.id, d.wins ?? 0])))
+    : null;
+  state.decided = Boolean(state.clinchedId);
+  state.tunable = inProgress && !state.decided;
   $('sim').hidden = !state.tunable;            // "Run your own season" is live-only
   $('method').hidden = !state.tunable;         // "What's under the hood" describes the live model
-  $('racePick').hidden = state.tunable;        // the race scrubber is wayback-only
-  $('bars').classList.toggle('instant', !state.tunable);   // no grow-animation while scrubbing
-  $('xnow').style.display = state.tunable ? '' : 'none';
+  $('racePick').hidden = state.tunable || state.decided;   // the race scrubber is wayback-only
+  $('bars').classList.toggle('instant', !state.tunable && !state.decided);   // no grow-animation while scrubbing
+  $('xnow').style.display = state.tunable || state.decided ? '' : 'none';
   $('eyebrow').textContent = state.tunable
     ? 'Live Title Race · Monte Carlo'
-    : `${state.year} Season · Wayback · Real Results`;
+    : state.decided
+      ? `${state.year} World Champion · Mathematically Decided`
+      : `${state.year} Season · Wayback · Real Results`;
   $('chartLabel').textContent = 'Title odds across the season';
   if (state.tunable) $('barsLabel').textContent = 'Who takes the crown, simulated';
   renderStamp();
@@ -396,7 +460,9 @@ function applyMode() {
 // The hero stamp: a simulated-seasons count when live; for wayback, odds are
 // computed analytically from real results, so say so (no simulation).
 function renderStamp() {
-  $('stamp').innerHTML = state.tunable
+  $('stamp').innerHTML = state.decided
+    ? `TITLE DECIDED · MATHEMATICALLY CLINCHED · <span id="dataSrc"></span>`
+    : state.tunable
     ? `MODEL STATE · <span class="live" id="stampN">${state.runs.toLocaleString()}</span> SIMULATED SEASONS · <span id="dataSrc"></span>`
     : `REPLAY · ODDS FROM REAL RESULTS · NO SIMULATION · <span id="dataSrc"></span>`;
 }
@@ -424,7 +490,10 @@ async function selectSeason(year) {
   state.selectedId = state.model.contenders[0].id;
 
   applyMode();                 // sets state.tunable from the model
-  if (year === state.liveYear) state.liveActive = state.tunable;   // resolve the LIVE badge
+  if (year === state.liveYear) {                   // resolve the LIVE / DECIDED badge
+    state.liveActive = state.tunable || state.decided;
+    state.liveDecided = state.decided;
+  }
   showDataSource(state.season.fetchedAt);
   renderLegend();
   if (state.tunable) {
@@ -432,6 +501,8 @@ async function selectSeason(year) {
     renderPicker();
     buildControls();
     run('Baseline', BASE_SEED);
+  } else if (state.decided) {
+    enterDecided();                                // title clinched: no forecast left
   } else {
     enterWayback();                                // analytic odds from real data, no sims
   }

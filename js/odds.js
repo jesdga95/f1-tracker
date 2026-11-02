@@ -12,7 +12,10 @@
 //   P(i champion) = ∫ f_i(x) · Π_{j≠i} F_j(x) dx
 //
 // computed by numerical integration (no random sampling). Once a season is over
-// (no rounds remain) the points leader is champion outright: 100/0.
+// (no rounds remain) the points leader is champion outright: 100/0. The same
+// holds earlier once the title is mathematically clinched (see js/clinch.js).
+
+import { clinchedChampion, settledOdds } from './clinch.js';
 
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
 const std = (xs) => {
@@ -47,15 +50,21 @@ function profiles(series, ids, upto) {
   return out;
 }
 
-function oddsAtRound(R, N, ids, series, prof) {
+function oddsAtRound(R, N, ids, series, prof, meta) {
   const cum = (r, id) => series[r]?.[id] ?? 0;
   const remaining = N - R;
+
+  // Mathematically clinched: nobody can catch the leader any more.
+  if (remaining > 0 && series[R]) {
+    const champ = clinchedChampion(series[R], meta, R);
+    if (champ && ids.includes(champ)) return settledOdds(ids, champ);
+  }
 
   // Season decided: the points leader takes it.
   if (remaining <= 0) {
     let champ = ids[0], best = -Infinity;
     for (const id of ids) { const p = cum(R, id); if (p > best) { best = p; champ = id; } }
-    return Object.fromEntries(ids.map((id) => [id, id === champ ? 100 : 0]));
+    return settledOdds(ids, champ);
   }
 
   // Final-points distribution per driver: points so far + a normal for the rest.
@@ -100,7 +109,7 @@ export function titleOddsByRound(series, ids, meta) {
   const out = {};
   for (let R = 1; R <= N; R++) {
     const prof = profiles(series, ids, R);   // expanding window: races 1..R only
-    out[R] = oddsAtRound(R, N, ids, series, prof);
+    out[R] = oddsAtRound(R, N, ids, series, prof, meta);
   }
   return out;
 }
