@@ -19,9 +19,13 @@ async function cachedJSON(url, attempt = 0) {
       if (hit && Date.now() - hit.t < TTL_MS) return hit.d;
     } catch { /* ignore corrupt cache */ }
   }
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  // Jolpica rate-limits (429); back off and retry rather than abort the snapshot.
-  if ((res.status === 429 || res.status >= 500) && attempt < 6) {
+  // Identify ourselves under Node (CI runners without a UA can get blocked).
+  const headers = { Accept: 'application/json' };
+  if (!store) headers['User-Agent'] = 'f1-tracker-snapshot (+https://github.com/jesdga95/f1-tracker)';
+  const res = await fetch(url, { headers });
+  // Jolpica rate-limits (429) and its CDN intermittently answers 403 to shared
+  // CI IPs; back off and retry rather than abort the snapshot.
+  if ((res.status === 429 || res.status === 403 || res.status >= 500) && attempt < 6) {
     const retryAfter = Number(res.headers.get('retry-after')) || 0;
     await sleep(retryAfter ? retryAfter * 1000 : Math.min(10000, 600 * 2 ** attempt));
     return cachedJSON(url, attempt + 1);
